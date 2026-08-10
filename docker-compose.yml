@@ -1,0 +1,35 @@
+# Локальный запуск трекера вакансий: два сервиса + файл SQLite в bind-mount.
+#
+# ВАЖНО: у приложения нет авторизации (п. 7 ТЗ), поэтому порт биндится
+# строго на 127.0.0.1 и инструмент недоступен из локальной сети.
+# Backend свой порт на хост не публикует вовсе — он нужен только nginx-у.
+
+services:
+  backend:
+    build:
+      context: ./backend
+    environment:
+      PORT: "8080"
+      DB_PATH: /data/hopecore.db
+      CHECK_TIMEOUT: 10s
+      CHECK_CONCURRENCY: "4"
+      LOG_LEVEL: info
+    volumes:
+      - ./data:/data
+    healthcheck:
+      test: ["CMD", "wget", "--quiet", "--tries=1", "--spider", "http://127.0.0.1:8080/api/health"]
+      interval: 10s
+      timeout: 3s
+      retries: 5
+      start_period: 5s
+    restart: unless-stopped
+
+  frontend:
+    build:
+      context: ./frontend
+    ports:
+      - "127.0.0.1:8080:80"
+    depends_on:
+      backend:
+        condition: service_healthy
+    restart: unless-stopped

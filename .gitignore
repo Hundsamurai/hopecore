@@ -1,0 +1,11 @@
+# Локальная БД (bind-mount из docker-compose)
+/data/
+
+# Frontend
+node_modules/
+dist/
+
+# Прочее
+.env
+.DS_Store
+*.log

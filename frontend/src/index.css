@@ -1,0 +1,43 @@
+@import 'tailwindcss';
+
+/*
+ * Тёмная тема админки. Палитра zinc из Tailwind, разложенная по семантическим
+ * токенам в стиле shadcn/ui: компоненты ссылаются на смысл (surface, border,
+ * muted), а не на конкретный оттенок.
+ *
+ * Светлой темы нет: по п. 6 ТЗ интерфейс тёмный, переключатель не нужен.
+ */
+@theme {
+  --color-background: oklch(0.2 0.004 285.9);
+  --color-surface: oklch(0.24 0.005 285.9);
+  --color-surface-hover: oklch(0.28 0.006 285.9);
+  --color-border: oklch(0.33 0.007 285.9);
+  --color-foreground: oklch(0.92 0.003 286.3);
+  --color-muted: oklch(0.65 0.008 286.1);
+
+  --color-primary: oklch(0.62 0.19 259.8);
+  --color-primary-foreground: oklch(0.98 0.002 286.3);
+
+  --color-success: oklch(0.62 0.15 149.2);
+  --color-success-surface: oklch(0.31 0.06 149.2);
+  --color-danger: oklch(0.62 0.2 25.3);
+  --color-danger-surface: oklch(0.31 0.08 25.3);
+  --color-warning: oklch(0.72 0.16 75.6);
+  --color-warning-surface: oklch(0.33 0.07 75.6);
+}
+
+@layer base {
+  html {
+    color-scheme: dark;
+  }
+
+  body {
+    @apply bg-background text-foreground antialiased;
+    font-family: ui-sans-serif, system-ui, -apple-system, 'Segoe UI', sans-serif;
+  }
+
+  /* Видимый фокус обязателен: по таблице вакансий ходят с клавиатуры. */
+  :focus-visible {
+    @apply outline-primary outline-2 outline-offset-2;
+  }
+}
