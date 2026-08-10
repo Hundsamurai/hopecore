@@ -3,6 +3,9 @@
 # ВАЖНО: у приложения нет авторизации (п. 7 ТЗ), поэтому порт биндится
 # строго на 127.0.0.1 и инструмент недоступен из локальной сети.
 # Backend свой порт на хост не публикует вовсе — он нужен только nginx-у.
+#
+# Значения по умолчанию рассчитаны на запуск без настройки.
+# Чтобы что-то поменять, скопируйте .env.example в .env — compose подхватит его сам.
 
 services:
   backend:
@@ -11,11 +14,11 @@ services:
     environment:
       PORT: "8080"
       DB_PATH: /data/hopecore.db
-      CHECK_TIMEOUT: 10s
-      CHECK_CONCURRENCY: "4"
-      LOG_LEVEL: info
+      CHECK_TIMEOUT: ${CHECK_TIMEOUT:-10s}
+      CHECK_CONCURRENCY: ${CHECK_CONCURRENCY:-4}
+      LOG_LEVEL: ${LOG_LEVEL:-info}
     volumes:
-      - ./data:/data
+      - ${DATA_DIR:-./data}:/data
     healthcheck:
       test: ["CMD", "wget", "--quiet", "--tries=1", "--spider", "http://127.0.0.1:8080/api/health"]
       interval: 10s
@@ -28,7 +31,7 @@ services:
     build:
       context: ./frontend
     ports:
-      - "127.0.0.1:8080:80"
+      - "127.0.0.1:${HOST_PORT:-8080}:80"
     depends_on:
       backend:
         condition: service_healthy

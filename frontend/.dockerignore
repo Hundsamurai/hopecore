@@ -2,3 +2,5 @@ node_modules
 dist
 Dockerfile
 .dockerignore
+# Смоук-скрипт нужен только локально, в образ его тащить незачем.
+scripts
