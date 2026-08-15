@@ -16,6 +16,7 @@ import (
 	"github.com/Hundsamurai/hopecore/backend/internal/activity"
 	"github.com/Hundsamurai/hopecore/backend/internal/api"
 	"github.com/Hundsamurai/hopecore/backend/internal/config"
+	"github.com/Hundsamurai/hopecore/backend/internal/llm"
 	"github.com/Hundsamurai/hopecore/backend/internal/service"
 	"github.com/Hundsamurai/hopecore/backend/internal/store"
 )
@@ -58,9 +59,22 @@ func run(cfg config.Config, log *slog.Logger) error {
 	checker := activity.NewHTTPChecker(cfg.CheckTimeout)
 	activityService := service.NewActivityService(db, checker, cfg.CheckConcurrency, log)
 
+	llmConfig, err := llm.LoadConfig()
+	if err != nil {
+		return err
+	}
+	logLLMConfig(log, llmConfig)
+
+	deps := api.Deps{
+		Log:      log,
+		DB:       db,
+		Activity: activityService,
+		LLM:      llmConfig,
+	}
+
 	srv := &http.Server{
 		Addr:              ":" + cfg.Port,
-		Handler:           api.NewServer(log, db, activityService).Routes(),
+		Handler:           api.NewServer(deps).Routes(),
 		ReadHeaderTimeout: 5 * time.Second,
 		ReadTimeout:       15 * time.Second,
 		// Массовая проверка ходит по внешним сайтам и упирается в их скорость.
@@ -99,4 +113,22 @@ func run(cfg config.Config, log *slog.Logger) error {
 		return err
 	}
 	return <-serveErr
+}
+
+// logLLMConfig сообщает при старте, какие провайдеры доступны.
+// Ключи не логируются — только идентификаторы и модели.
+func logLLMConfig(log *slog.Logger, cfg llm.Config) {
+	available := cfg.Available()
+	if len(available) == 0 {
+		log.Info("провайдеры языковых моделей не настроены, заполнение через LLM недоступно")
+		return
+	}
+
+	for _, provider := range available {
+		log.Info("провайдер LLM доступен",
+			"id", provider.ID,
+			"models", provider.Models,
+			"price_known", provider.Price.Known(),
+		)
+	}
 }

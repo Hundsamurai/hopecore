@@ -81,6 +81,14 @@ func (s *Server) handleCreateVacancy(w http.ResponseWriter, r *http.Request) {
 	}
 
 	vacancy := req.toModel()
+
+	// Согласованность зарплатных полей проверяется на собранной записи:
+	// по одному полю «от больше чем до» не увидеть.
+	if errs := normalizeSalary(&vacancy); !errs.empty() {
+		writeValidationError(w, errs)
+		return
+	}
+
 	if err := store.CreateVacancy(s.db, &vacancy); err != nil {
 		s.writeInternalError(w, r, err)
 		return
@@ -136,6 +144,13 @@ func (s *Server) handleUpdateVacancy(w http.ResponseWriter, r *http.Request) {
 	}
 
 	req.apply(vacancy)
+
+	// После PATCH одна граница вилки может прийти из тела, а вторая остаться
+	// прежней — сравнивать нужно итоговые значения.
+	if errs := normalizeSalary(vacancy); !errs.empty() {
+		writeValidationError(w, errs)
+		return
+	}
 
 	if err := store.SaveVacancy(s.db, vacancy); err != nil {
 		s.writeInternalError(w, r, err)

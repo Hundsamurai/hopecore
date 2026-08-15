@@ -6,20 +6,37 @@ import (
 	"log/slog"
 	"net/http"
 
+	"github.com/Hundsamurai/hopecore/backend/internal/llm"
 	"github.com/Hundsamurai/hopecore/backend/internal/service"
 	"gorm.io/gorm"
 )
+
+// Deps — зависимости HTTP-слоя. Собраны в структуру, а не в список аргументов:
+// с каждым этапом их становится больше, и позиционные параметры быстро
+// превращаются в загадку на стороне вызова.
+type Deps struct {
+	Log      *slog.Logger
+	DB       *gorm.DB
+	Activity *service.ActivityService
+	LLM      llm.Config
+}
 
 // Server держит зависимости хендлеров.
 type Server struct {
 	log      *slog.Logger
 	db       *gorm.DB
 	activity *service.ActivityService
+	llm      llm.Config
 }
 
 // NewServer создаёт HTTP-слой приложения.
-func NewServer(log *slog.Logger, db *gorm.DB, activity *service.ActivityService) *Server {
-	return &Server{log: log, db: db, activity: activity}
+func NewServer(deps Deps) *Server {
+	return &Server{
+		log:      deps.Log,
+		db:       deps.DB,
+		activity: deps.Activity,
+		llm:      deps.LLM,
+	}
 }
 
 // Routes собирает роутер. Используется http.ServeMux из stdlib:
@@ -47,6 +64,9 @@ func (s *Server) Routes() http.Handler {
 	// вместо отдельных POST и PATCH.
 	mux.HandleFunc("GET /api/vacancies/{id}/candidate-status", s.handleGetCandidateStatus)
 	mux.HandleFunc("PUT /api/vacancies/{id}/candidate-status", s.handlePutCandidateStatus)
+
+	// Провайдеры языковых моделей. Ключи наружу не отдаются.
+	mux.HandleFunc("GET /api/llm/providers", s.handleListProviders)
 
 	// withJSONErrors переводит служебные 404/405 от ServeMux в общий JSON-формат.
 	// Отдельный catch-all маршрут для этого не годится: он перехватывал бы путь

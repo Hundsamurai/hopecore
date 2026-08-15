@@ -16,10 +16,16 @@ export const vacancyKeys = {
 /** Поля вакансии, которые заполняет пользователь (Режим 1 из п. 3 ТЗ). */
 export interface VacancyInput {
   url: string
+  title: string
   company: string
   grade: string
   tech_tags: string[]
   opened_date: string | null
+  salary_from: number | null
+  salary_to: number | null
+  salary_currency: string
+  salary_gross: boolean | null
+  work_format: string
 }
 
 export function fetchVacancies(

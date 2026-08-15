@@ -4,6 +4,7 @@
 # Frontend
 node_modules/
 dist/
+*.tsbuildinfo
 
 # Прочее
 .env

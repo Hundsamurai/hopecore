@@ -24,8 +24,16 @@ import (
 //	busy_timeout(5000) — ждать вместо мгновенной ошибки SQLITE_BUSY.
 const pragmas = "_pragma=foreign_keys(1)&_pragma=busy_timeout(5000)"
 
-// journalWAL включается только для файловой БД: у in-memory журнал всегда "memory".
-const journalWAL = "_pragma=journal_mode(WAL)"
+// journalRollback — обычный откатный журнал вместо WAL.
+//
+// WAL здесь сознательно не используется. Он нужен, когда читатели работают
+// параллельно с писателем, а у нас одно соединение и один пользователь, так что
+// выигрыша нет. Зато WAL держит состояние в разделяемой памяти (файл -shm через
+// mmap), а файл БД лежит в bind-mount Docker Desktop и доступен ещё и с хоста.
+// На такой связке однажды получили повреждение: после checkpoint'а при остановке
+// контейнера главный файл оказался заполнен нулями, а -wal и -shm исчезли.
+// Откатный журнал разделяемую память не использует и этот класс отказов убирает.
+const journalRollback = "_pragma=journal_mode(DELETE)"
 
 // Open подключается к файловой БД по указанному пути, создавая каталог при необходимости.
 func Open(path string, log *slog.Logger) (*gorm.DB, error) {
@@ -39,11 +47,11 @@ func Open(path string, log *slog.Logger) (*gorm.DB, error) {
 		}
 	}
 
-	dsn := "file:" + url.PathEscape(path) + "?" + pragmas + "&" + journalWAL
+	dsn := "file:" + url.PathEscape(path) + "?" + pragmas + "&" + journalRollback
 
 	db, err := gorm.Open(sqlite.Open(dsn), gormConfig(log))
 	if err != nil {
-		return nil, fmt.Errorf("подключение к БД %s: %w", path, err)
+		return nil, describeOpenError(path, err)
 	}
 
 	// Инструмент однопользовательский, а SQLite не любит параллельную запись:
@@ -84,6 +92,20 @@ func OpenMemory(log *slog.Logger) (*gorm.DB, error) {
 	sqlDB.SetConnMaxLifetime(0)
 
 	return db, nil
+}
+
+// describeOpenError превращает сообщение SQLite в понятное объяснение.
+// «file is not a database (26)» без пояснения выглядит как ошибка конфигурации,
+// хотя означает испорченный или посторонний файл.
+func describeOpenError(path string, err error) error {
+	if strings.Contains(err.Error(), "file is not a database") {
+		return fmt.Errorf(
+			"файл %s не является базой SQLite: он повреждён или это посторонний файл. "+
+				"Проверьте его через `sqlite3 %s \"PRAGMA integrity_check;\"`, "+
+				"восстановите из резервной копии или удалите файл, чтобы начать с чистой базы: %w",
+			path, path, err)
+	}
+	return fmt.Errorf("подключение к БД %s: %w", path, err)
 }
 
 // Close закрывает пул соединений.

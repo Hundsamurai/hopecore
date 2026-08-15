@@ -11,6 +11,20 @@ export const GRADE_LABELS: Record<Grade, string> = {
   lead: 'Lead',
 }
 
+/** Форматы работы — тот же набор, что в model.WorkFormats на backend. */
+export const WORK_FORMATS = ['onsite', 'hybrid', 'remote'] as const
+
+export type WorkFormat = (typeof WORK_FORMATS)[number]
+
+export const WORK_FORMAT_LABELS: Record<WorkFormat, string> = {
+  onsite: 'В офисе',
+  hybrid: 'Гибрид',
+  remote: 'Удалённо',
+}
+
+/** Валюта по умолчанию (model.DefaultSalaryCurrency). */
+export const DEFAULT_CURRENCY = 'RUB'
+
 /** Дата в формате YYYY-MM-DD (тип model.Date на backend). */
 export type IsoDate = string
 
@@ -33,10 +47,23 @@ export interface CandidateStatus {
 export interface Vacancy {
   id: number
   url: string
+  title: string
   company: string
   grade: string
   tech_tags: string[]
   opened_date: IsoDate | null
+
+  /**
+   * Зарплатная вилка из объявления. Не путать с offered_salary и real_salary
+   * в статусе кандидата: там то, что предложили лично вам.
+   * Любая из границ может отсутствовать: «от 300k» и «до 500k» равно осмысленны.
+   */
+  salary_from: number | null
+  salary_to: number | null
+  salary_currency: string
+  /** true — до вычета налогов, false — на руки, null — не указано. */
+  salary_gross: boolean | null
+  work_format: string
 
   /**
    * Отображаемая активность: manual ?? auto ?? true.

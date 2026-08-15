@@ -2,6 +2,7 @@ package store
 
 import (
 	"errors"
+	"os"
 	"path/filepath"
 	"strings"
 	"testing"
@@ -68,7 +69,7 @@ func TestForeignKeysPragmaEnabled(t *testing.T) {
 	}
 }
 
-func TestOpenFileEnablesWAL(t *testing.T) {
+func TestOpenFileUsesRollbackJournal(t *testing.T) {
 	path := filepath.Join(t.TempDir(), "hopecore.db")
 
 	db, err := Open(path, nil)
@@ -89,8 +90,15 @@ func TestOpenFileEnablesWAL(t *testing.T) {
 	if err != nil {
 		t.Fatalf("PRAGMA journal_mode: %v", err)
 	}
-	if !strings.EqualFold(mode, "wal") {
-		t.Errorf("journal_mode = %q, ожидался wal", mode)
+	// WAL сознательно не используется: файл лежит в bind-mount и доступен с хоста,
+	// а разделяемая память WAL на такой связке однажды привела к повреждению БД.
+	if !strings.EqualFold(mode, "delete") {
+		t.Errorf("journal_mode = %q, ожидался delete", mode)
+	}
+
+	// Файла -shm быть не должно: это признак включённого WAL.
+	if _, err := os.Stat(path + "-shm"); err == nil {
+		t.Error("рядом с БД появился файл -shm, значит включён WAL")
 	}
 
 	fk, err := PragmaInt(db, "foreign_keys")
@@ -244,5 +252,27 @@ func assertCount(t *testing.T, db *gorm.DB, dest any, want int64, name string) {
 	}
 	if got != want {
 		t.Errorf("%s: осталось %d записей, ожидалось %d", name, got, want)
+	}
+}
+
+func TestOpenCorruptedFileGivesReadableError(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "hopecore.db")
+
+	// Ровно то, что мы однажды получили в bind-mount: файл нужного размера из нулей.
+	if err := os.WriteFile(path, make([]byte, 4096), 0o644); err != nil {
+		t.Fatalf("подготовка файла: %v", err)
+	}
+
+	db, err := Open(path, nil)
+	if err == nil {
+		_ = Close(db)
+		t.Fatal("Open принял испорченный файл, ожидалась ошибка")
+	}
+
+	// Сообщение должно объяснять, что делать, а не только цитировать SQLite.
+	for _, fragment := range []string{"не является базой SQLite", "integrity_check"} {
+		if !strings.Contains(err.Error(), fragment) {
+			t.Errorf("в сообщении нет %q: %v", fragment, err)
+		}
 	}
 }

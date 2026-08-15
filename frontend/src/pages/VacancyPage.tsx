@@ -12,7 +12,14 @@ import { ActivityPanel } from '@/components/vacancies/ActivityPanel'
 import { CandidateStatusForm } from '@/components/vacancies/CandidateStatusForm'
 import { StagePlaceholder } from '@/components/vacancies/StagePlaceholder'
 import { VacancyFormDialog } from '@/components/vacancies/VacancyFormDialog'
-import { formatDate, formatDateTime } from '@/lib/format'
+import {
+  formatDate,
+  formatDateTime,
+  formatSalary,
+  formatSalaryGross,
+  formatWorkFormat,
+  vacancyHeading,
+} from '@/lib/format'
 
 /**
  * Карточка вакансии. На этом шаге показывает данные вакансии — нужна, чтобы
@@ -61,9 +68,11 @@ export function VacancyPage() {
         <article className="mt-4">
           <header className="flex flex-wrap items-start justify-between gap-3">
             <div className="min-w-0">
-              <h1 className="text-xl font-semibold tracking-tight">
-                {vacancy.company || 'Без названия компании'}
-              </h1>
+              <h1 className="text-xl font-semibold tracking-tight">{vacancyHeading(vacancy)}</h1>
+              {/* Компания под должностью: заголовок теперь занимает должность. */}
+              {vacancy.title && vacancy.company && (
+                <p className="mt-0.5 text-sm text-muted">{vacancy.company}</p>
+              )}
               <a
                 href={vacancy.url}
                 target="_blank"
@@ -90,6 +99,15 @@ export function VacancyPage() {
             <dl className="mt-3 grid gap-3 sm:grid-cols-2">
               <Field label="Грейд">
                 {vacancy.grade ? (GRADE_LABELS[vacancy.grade as Grade] ?? vacancy.grade) : '—'}
+              </Field>
+              <Field label="Формат работы">{formatWorkFormat(vacancy.work_format)}</Field>
+              <Field label="Вилка из объявления">
+                <span>{formatSalary(vacancy)}</span>
+                {formatSalaryGross(vacancy.salary_gross) && (
+                  <span className="ml-1.5 text-xs text-muted">
+                    {formatSalaryGross(vacancy.salary_gross)}
+                  </span>
+                )}
               </Field>
               <Field label="Открыта">{formatDate(vacancy.opened_date)}</Field>
               <Field label="Добавлена">{formatDateTime(vacancy.created_at)}</Field>

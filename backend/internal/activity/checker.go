@@ -14,7 +14,10 @@ import (
 
 // UserAgent — как трекер представляется сайтам вакансий. Честная строка вместо
 // маскировки под браузер: инструмент личный, скрывать нечего.
-const UserAgent = "hopecore-vacancy-tracker/0.1 (личный трекер вакансий)"
+//
+// Только ASCII: значения HTTP-заголовков за пределами ASCII не предусмотрены
+// стандартом, и часть клиентов и серверов на кириллице ломается.
+const UserAgent = "hopecore-vacancy-tracker/0.1 (personal vacancy tracker)"
 
 // maxRedirects ограничивает цепочку перенаправлений.
 const maxRedirects = 5

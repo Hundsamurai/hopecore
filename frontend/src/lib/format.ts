@@ -1,4 +1,4 @@
-import type { Vacancy } from '@/api/types'
+import { WORK_FORMAT_LABELS, type Vacancy, type WorkFormat } from '@/api/types'
 
 const dateFormatter = new Intl.DateTimeFormat('ru-RU', {
   day: '2-digit',
@@ -63,4 +63,76 @@ export function describeActivity(vacancy: Vacancy): string {
     return 'Проверка ещё не дала результата — считаем вакансию активной.'
   }
   return auto ? 'По результату проверки: активна.' : 'По результату проверки: снята.'
+}
+
+const numberFormatter = new Intl.NumberFormat('ru-RU', { maximumFractionDigits: 0 })
+
+/**
+ * Символ валюты по коду. Intl бросает исключение на неизвестном коде,
+ * поэтому непонятный код показываем как есть — данные важнее красоты.
+ */
+function currencySymbol(code: string): string {
+  if (!code) {
+    return ''
+  }
+  try {
+    const parts = new Intl.NumberFormat('ru-RU', {
+      style: 'currency',
+      currency: code,
+      maximumFractionDigits: 0,
+    }).formatToParts(0)
+    return parts.find((part) => part.type === 'currency')?.value ?? code
+  } catch {
+    return code
+  }
+}
+
+/**
+ * Вилка из объявления в человеческом виде: «300 000 – 450 000 ₽»,
+ * «от 300 000 ₽», «до 450 000 ₽». Пустая вилка даёт тире.
+ */
+export function formatSalary(vacancy: Pick<Vacancy, 'salary_from' | 'salary_to' | 'salary_currency'>): string {
+  const { salary_from: from, salary_to: to, salary_currency: currency } = vacancy
+  if (from === null && to === null) {
+    return '—'
+  }
+
+  const symbol = currencySymbol(currency)
+  const suffix = symbol ? ` ${symbol}` : ''
+
+  if (from !== null && to !== null) {
+    return from === to
+      ? `${numberFormatter.format(from)}${suffix}`
+      : `${numberFormatter.format(from)} – ${numberFormatter.format(to)}${suffix}`
+  }
+  if (from !== null) {
+    return `от ${numberFormatter.format(from)}${suffix}`
+  }
+  return `до ${numberFormatter.format(to as number)}${suffix}`
+}
+
+/** Пояснение к вилке: до вычета налогов или на руки. */
+export function formatSalaryGross(gross: boolean | null): string {
+  if (gross === null) {
+    return ''
+  }
+  return gross ? 'до вычета налогов' : 'на руки'
+}
+
+/** Значение для сортировки по вилке: та граница, которая известна. */
+export function salarySortValue(vacancy: Pick<Vacancy, 'salary_from' | 'salary_to'>): number | undefined {
+  return vacancy.salary_from ?? vacancy.salary_to ?? undefined
+}
+
+/** Формат работы человеческой подписью; неизвестное значение отдаём как есть. */
+export function formatWorkFormat(value: string): string {
+  if (!value) {
+    return '—'
+  }
+  return WORK_FORMAT_LABELS[value as WorkFormat] ?? value
+}
+
+/** Заголовок карточки и первой колонки таблицы: должность важнее компании. */
+export function vacancyHeading(vacancy: Pick<Vacancy, 'title' | 'company' | 'url'>): string {
+  return vacancy.title || vacancy.company || formatHost(vacancy.url)
 }

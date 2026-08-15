@@ -15,6 +15,7 @@ import (
 	"gorm.io/gorm"
 
 	"github.com/Hundsamurai/hopecore/backend/internal/activity"
+	"github.com/Hundsamurai/hopecore/backend/internal/llm"
 	"github.com/Hundsamurai/hopecore/backend/internal/service"
 	"github.com/Hundsamurai/hopecore/backend/internal/store"
 )
@@ -85,10 +86,12 @@ func (c *stubChecker) called(rawURL string) bool {
 
 // testEnv — роутер поверх чистой in-memory БД с подставным чекером.
 type testEnv struct {
-	t       *testing.T
-	handler http.Handler
-	db      *gorm.DB
-	checker *stubChecker
+	t        *testing.T
+	handler  http.Handler
+	db       *gorm.DB
+	checker  *stubChecker
+	log      *slog.Logger
+	activity *service.ActivityService
 }
 
 func newTestEnv(t *testing.T) *testEnv {
@@ -113,12 +116,31 @@ func newTestEnv(t *testing.T) *testEnv {
 	checker := newStubChecker()
 	activityService := service.NewActivityService(db, checker, 4, log)
 
-	return &testEnv{
+	env := &testEnv{
 		t:       t,
-		handler: NewServer(log, db, activityService).Routes(),
 		db:      db,
 		checker: checker,
 	}
+	// По умолчанию провайдеров нет: приложение должно вести себя как на Этапе 1.
+	env.rebuild(log, activityService, llm.Config{})
+	env.log = log
+	env.activity = activityService
+	return env
+}
+
+// rebuild пересобирает роутер с новой конфигурацией моделей.
+func (e *testEnv) rebuild(log *slog.Logger, activity *service.ActivityService, llmConfig llm.Config) {
+	e.handler = NewServer(Deps{
+		Log:      log,
+		DB:       e.db,
+		Activity: activity,
+		LLM:      llmConfig,
+	}).Routes()
+}
+
+// withLLM подключает конфигурацию провайдеров к тому же окружению.
+func (e *testEnv) withLLM(cfg llm.Config) {
+	e.rebuild(e.log, e.activity, cfg)
 }
 
 func intPtr(v int) *int { return &v }

@@ -2,17 +2,12 @@ package api
 
 import (
 	"errors"
-	"math"
 	"net/http"
 	"strings"
 
 	"github.com/Hundsamurai/hopecore/backend/internal/model"
 	"github.com/Hundsamurai/hopecore/backend/internal/store"
 )
-
-// maxSalary — верхняя граница вменяемости для зарплатных полей.
-// Нужна не ради безопасности, а чтобы поймать лишние нули при вводе.
-const maxSalary = 1e9
 
 // putCandidateStatusRequest — тело PUT /api/vacancies/{id}/candidate-status.
 //
@@ -55,10 +50,10 @@ func (r putCandidateStatusRequest) validate() fieldErrors {
 		}
 	}
 
-	if msg := validateSalary(r.OfferedSalary); msg != "" {
+	if msg := validateSalaryBound(r.OfferedSalary); msg != "" {
 		errs.add("offered_salary", msg)
 	}
-	if msg := validateSalary(r.RealSalary); msg != "" {
+	if msg := validateSalaryBound(r.RealSalary); msg != "" {
 		errs.add("real_salary", msg)
 	}
 
@@ -78,22 +73,6 @@ func (r putCandidateStatusRequest) toModel(vacancyID uint) model.CandidateStatus
 		RealSalary:         r.RealSalary,
 		MarketSalaryData:   strings.TrimSpace(r.MarketSalaryData),
 	}
-}
-
-func validateSalary(value *float64) string {
-	if value == nil {
-		return ""
-	}
-	if math.IsNaN(*value) || math.IsInf(*value, 0) {
-		return "ожидается число"
-	}
-	if *value < 0 {
-		return "зарплата не может быть отрицательной"
-	}
-	if *value > maxSalary {
-		return "неправдоподобно большое значение"
-	}
-	return ""
 }
 
 func (s *Server) handlePutCandidateStatus(w http.ResponseWriter, r *http.Request) {

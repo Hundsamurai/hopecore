@@ -290,3 +290,16 @@ func assertActive(t *testing.T, got, want *bool) {
 }
 
 func ptr[T any](v T) *T { return &v }
+
+func TestUserAgentIsASCII(t *testing.T) {
+	// Значения HTTP-заголовков за пределами ASCII не предусмотрены стандартом.
+	// Кириллица в User-Agent уже ломала сторонние клиенты при отладке.
+	for i := 0; i < len(UserAgent); i++ {
+		if UserAgent[i] > 127 {
+			t.Fatalf("User-Agent содержит не-ASCII байт в позиции %d: %q", i, UserAgent)
+		}
+	}
+	if UserAgent == "" {
+		t.Fatal("User-Agent пуст: часть сайтов такие запросы отвергает")
+	}
+}

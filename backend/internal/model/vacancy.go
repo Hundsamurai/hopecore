@@ -20,11 +20,39 @@ var Grades = []string{GradeIntern, GradeJunior, GradeMiddle, GradeSenior, GradeL
 // IsValidGrade сообщает, входит ли значение в допустимый набор.
 // Пустая строка считается валидной (грейд не указан).
 func IsValidGrade(grade string) bool {
-	if grade == "" {
+	return isInSet(grade, Grades)
+}
+
+// WorkFormat — формат работы. Набор фиксирован, чтобы значение годилось для
+// фильтрации и не превращалось в свалку формулировок с разных сайтов
+// («можно из дома», «remote-friendly», «гибридный график»).
+const (
+	WorkFormatOnsite = "onsite"
+	WorkFormatHybrid = "hybrid"
+	WorkFormatRemote = "remote"
+)
+
+// WorkFormats — все допустимые форматы работы. Пустое значение тоже валидно.
+var WorkFormats = []string{WorkFormatOnsite, WorkFormatHybrid, WorkFormatRemote}
+
+// IsValidWorkFormat сообщает, входит ли значение в допустимый набор.
+func IsValidWorkFormat(format string) bool {
+	return isInSet(format, WorkFormats)
+}
+
+// DefaultSalaryCurrency подставляется, когда вилка указана, а валюта нет.
+const DefaultSalaryCurrency = "RUB"
+
+// MaxSalary — верхняя граница вменяемости для зарплатных полей. Нужна не ради
+// безопасности, а чтобы поймать лишние нули при вводе.
+const MaxSalary = 1e9
+
+func isInSet(value string, set []string) bool {
+	if value == "" {
 		return true
 	}
-	for _, g := range Grades {
-		if g == grade {
+	for _, allowed := range set {
+		if allowed == value {
 			return true
 		}
 	}
@@ -42,11 +70,24 @@ func IsValidGrade(grade string) bool {
 type Vacancy struct {
 	ID       uint   `gorm:"primaryKey"`
 	URL      string `gorm:"not null;index"`
+	Title    string
 	Company  string
 	Grade    string
 	TechTags Tags
 	// OpenedDate — дата открытия вакансии, заполняется вручную.
 	OpenedDate *Date
+
+	// Зарплатная вилка из объявления. Не путать с OfferedSalary и RealSalary
+	// в CandidateStatus: там то, что предложили лично кандидату.
+	// Любая из границ может отсутствовать — «от 300k» и «до 500k» равно осмысленны.
+	SalaryFrom     *float64
+	SalaryTo       *float64
+	SalaryCurrency string
+	// SalaryGross: true — до вычета налогов, false — на руки, nil — не указано.
+	SalaryGross *bool
+
+	// WorkFormat — формат работы из набора WorkFormats.
+	WorkFormat string
 
 	AutoIsActive   *bool
 	ManualIsActive *bool

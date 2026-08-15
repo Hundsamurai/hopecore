@@ -3,6 +3,7 @@ import {
   createSortedRowModel,
   rowSortingFeature,
   sortFn_alphanumeric,
+  sortFn_basic,
   sortFn_datetime,
   sortFn_text,
   tableFeatures,
@@ -14,7 +15,16 @@ import { Link, useNavigate } from 'react-router-dom'
 
 import { GRADE_LABELS, type Grade, type Vacancy } from '@/api/types'
 import { Badge } from '@/components/ui/badge'
-import { formatDate, formatDateTime, formatHost } from '@/lib/format'
+import {
+  formatDate,
+  formatDateTime,
+  formatHost,
+  formatSalary,
+  formatSalaryGross,
+  formatWorkFormat,
+  salarySortValue,
+  vacancyHeading,
+} from '@/lib/format'
 import { cn } from '@/lib/utils'
 
 import { ActivityBadge } from './ActivityBadge'
@@ -28,6 +38,7 @@ const features = tableFeatures({
   sortedRowModel: createSortedRowModel(),
   sortFns: {
     alphanumeric: sortFn_alphanumeric,
+    basic: sortFn_basic,
     datetime: sortFn_datetime,
     text: sortFn_text,
   },
@@ -52,9 +63,9 @@ const sortByActivity: SortFn<typeof features, Vacancy> = (rowA, rowB) =>
   Number(rowA.original.is_active) - Number(rowB.original.is_active)
 
 const columns = columnHelper.columns([
-  columnHelper.accessor((row) => row.company || formatHost(row.url), {
-    id: 'company',
-    header: 'Компания',
+  columnHelper.accessor((row) => vacancyHeading(row), {
+    id: 'position',
+    header: 'Вакансия',
     sortFn: 'text',
     cell: ({ row, getValue }) => (
       <div className="flex min-w-0 flex-col">
@@ -66,7 +77,12 @@ const columns = columnHelper.columns([
         >
           {getValue()}
         </Link>
-        <span className="truncate text-xs text-muted">{formatHost(row.original.url)}</span>
+        {/* Под должностью — компания, а если её нет, то домен: что-то опознаваемое. */}
+        <span className="truncate text-xs text-muted">
+          {row.original.title
+            ? row.original.company || formatHost(row.original.url)
+            : formatHost(row.original.url)}
+        </span>
       </div>
     ),
   }),
@@ -74,12 +90,40 @@ const columns = columnHelper.columns([
   columnHelper.accessor('grade', {
     header: 'Грейд',
     sortFn: sortByGrade,
-    cell: ({ getValue }) => {
+    cell: ({ row, getValue }) => {
       const grade = getValue()
-      return grade ? (
-        <span className="text-sm">{GRADE_LABELS[grade as Grade] ?? grade}</span>
-      ) : (
-        <span className="text-muted">—</span>
+      const format = row.original.work_format
+
+      return (
+        <div className="flex flex-col gap-0.5">
+          {grade ? (
+            <span className="text-sm">{GRADE_LABELS[grade as Grade] ?? grade}</span>
+          ) : (
+            <span className="text-muted">—</span>
+          )}
+          {format && (
+            <span className="text-xs whitespace-nowrap text-muted">
+              {formatWorkFormat(format)}
+            </span>
+          )}
+        </div>
+      )
+    },
+  }),
+
+  columnHelper.accessor((row) => salarySortValue(row), {
+    id: 'salary',
+    header: 'Вилка',
+    sortFn: 'basic',
+    // Вакансии без указанной вилки уезжают в конец при любом направлении.
+    sortUndefined: 'last',
+    cell: ({ row }) => {
+      const gross = formatSalaryGross(row.original.salary_gross)
+      return (
+        <div className="flex flex-col gap-0.5">
+          <span className="text-sm whitespace-nowrap">{formatSalary(row.original)}</span>
+          {gross && <span className="text-xs whitespace-nowrap text-muted">{gross}</span>}
+        </div>
       )
     },
   }),
@@ -149,7 +193,7 @@ const columns = columnHelper.columns([
         rel="noreferrer"
         onClick={(event) => event.stopPropagation()}
         className="inline-flex text-muted transition-colors hover:text-foreground"
-        aria-label={`Открыть вакансию ${row.original.company || formatHost(row.original.url)} на сайте`}
+        aria-label={`Открыть вакансию ${vacancyHeading(row.original)} на сайте`}
         title="Открыть на сайте"
       >
         <ExternalLink className="size-4" aria-hidden="true" />
@@ -180,8 +224,8 @@ export function VacancyTable({ vacancies }: VacancyTableProps) {
     <div className="overflow-x-auto rounded-lg border border-border">
       <table className="w-full border-collapse text-left">
         <caption className="sr-only">
-          Список вакансий: компания, грейд, технологии, активность, дата отклика, этап
-          собеседования и дата изменения
+          Список вакансий: должность и компания, грейд с форматом работы, зарплатная вилка,
+          технологии, активность, дата отклика, этап собеседования и дата изменения
         </caption>
 
         <thead className="bg-surface">
