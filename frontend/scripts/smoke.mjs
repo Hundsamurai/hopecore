@@ -116,6 +116,14 @@ try {
     '/src/components/ui/toast.tsx',
     '/src/api/activity.ts',
     '/src/components/vacancies/ActivityPanel.tsx',
+    '/src/api/llm.ts',
+    '/src/components/llm/RunStatusBadge.tsx',
+    '/src/components/llm/RunDetailDialog.tsx',
+    '/src/pages/LlmRunsPage.tsx',
+    '/src/api/backups.ts',
+    '/src/pages/BackupsPage.tsx',
+    '/src/components/vacancies/ExtractPreviewDialog.tsx',
+    '/src/components/vacancies/ExtractButton.tsx',
     '/src/pages/VacanciesPage.tsx',
     '/src/pages/VacancyPage.tsx',
     '/src/pages/NotFoundPage.tsx',
@@ -152,8 +160,11 @@ try {
     shellHtml,
     [
       'Вакансии',
-      'Поиск LLM',
-      'Этап 2',
+      // Раздел журнала стал рабочим, а поиск по источникам отложен до Этапа 2.1
+      'Запуски LLM',
+      'Резервные копии',
+      'Поиск вакансий',
+      'Этап 2.1',
       'Нейроблок',
       'Этап 3',
       'Свернуть меню',
@@ -376,6 +387,261 @@ try {
     throw new Error(`ожидалась короткая сводка «опрошено: 3», получено: ${quietSummary}`)
   }
   console.log('ok сводка проверки — нулевые счётчики скрыты')
+
+  // Экран журнала: без данных должно быть понятное пустое состояние.
+  const { LlmRunsPage } = await server.ssrLoadModule('/src/pages/LlmRunsPage.tsx')
+  check(
+    renderToString(
+      withProviders(
+        React.createElement(
+          MemoryRouter,
+          { initialEntries: ['/llm/runs'] },
+          React.createElement(LlmRunsPage),
+        ),
+      ),
+    ),
+    ['Запуски LLM', 'инициируете вы'],
+    'экран журнала',
+  )
+
+  // Экран резервных копий: пустое состояние объясняет, зачем раздел нужен.
+  const { BackupsPage } = await server.ssrLoadModule('/src/pages/BackupsPage.tsx')
+  const { backupKeys } = await server.ssrLoadModule('/src/api/backups.ts')
+
+  /** Рендер страницы с заранее положенным в кэш ответом API. */
+  const renderBackups = (data) => {
+    const client = new QueryClient()
+    if (data) {
+      client.setQueryData(backupKeys.list, data)
+    }
+    return renderToString(
+      React.createElement(
+        QueryClientProvider,
+        { client },
+        React.createElement(
+          ToastProvider,
+          null,
+          React.createElement(
+            MemoryRouter,
+            { initialEntries: ['/backups'] },
+            React.createElement(BackupsPage),
+          ),
+        ),
+      ),
+    )
+  }
+
+  check(
+    renderBackups({ items: [], dir: '/data/backups', total_bytes: 0 }),
+    ['Резервные копии', 'Создать копию', 'Копий пока нет', '/data/backups'],
+    'экран копий без данных',
+  )
+
+  const backupsHtml = renderBackups({
+    items: [
+      {
+        name: 'hopecore-20260810-153000-before-restore.db',
+        size_bytes: 143360,
+        created_at: '2026-08-10T15:30:00Z',
+        automatic: true,
+      },
+      {
+        name: 'hopecore-20260810-120000.db',
+        size_bytes: 139264,
+        created_at: '2026-08-10T12:00:00Z',
+        automatic: false,
+      },
+    ],
+    dir: '/data/backups',
+    total_bytes: 282624,
+  })
+  check(
+    backupsHtml,
+    [
+      // Столбцы и данные
+      'Копия',
+      'Создана',
+      'Размер',
+      'hopecore-20260810-120000.db',
+      '140 КБ',
+      '276 КБ',
+      '2 копии',
+      // Автоматическую копию видно: именно она отменяет восстановление
+      'снята автоматически перед восстановлением',
+      // Действия
+      'Восстановить',
+      'Удалить копию hopecore-20260810-120000.db',
+      // Предупреждение в диалоге подтверждения
+      'Все текущие данные',
+      'можно будет отменить',
+      // Доступность
+      '<caption',
+      'scope="col"',
+    ],
+    'экран копий',
+  )
+
+  // Свежие копии сверху: восстанавливают обычно последнюю.
+  if (
+    backupsHtml.indexOf('hopecore-20260810-153000-before-restore.db') >
+    backupsHtml.indexOf('hopecore-20260810-120000.db')
+  ) {
+    throw new Error('экран копий: ожидался порядок «свежие сверху»')
+  }
+  console.log('ok render экран копий — свежие сверху')
+
+  // Статусы различимы не только цветом: подпись всегда рядом с бейджем.
+  const { RunStatusBadge } = await server.ssrLoadModule('/src/components/llm/RunStatusBadge.tsx')
+  const { RUN_STATUS_LABELS } = await server.ssrLoadModule('/src/api/llm.ts')
+  for (const [status, label] of Object.entries(RUN_STATUS_LABELS)) {
+    const html = renderToString(React.createElement(RunStatusBadge, { status }))
+    if (!html.includes(label)) {
+      throw new Error(`статус ${status}: в разметке нет подписи «${label}»`)
+    }
+  }
+  console.log('ok render бейджи статусов —', Object.keys(RUN_STATUS_LABELS).join(', '))
+
+  // Форматирование расхода: прочерк вместо выдуманной суммы.
+  const { formatBytes, formatCost, formatTokens, formatDuration } =
+    await server.ssrLoadModule('/src/lib/format.ts')
+  const formatChecks = [
+    [formatCost(null), '—', 'стоимость без прайса'],
+    [formatCost(0.0032), '$0.0032', 'стоимость тысячными'],
+    [formatCost(2.8), '$2.80', 'стоимость обычная'],
+    [formatTokens(null), '—', 'токены не вернулись'],
+    [formatDuration(830), '830 мс', 'меньше секунды'],
+    [formatDuration(1843), '1.8 с', 'больше секунды'],
+    [formatBytes(512), '512 Б', 'размер в байтах'],
+    [formatBytes(143360), '140 КБ', 'размер в килобайтах'],
+    [formatBytes(5 * 1024 * 1024), '5.0 МБ', 'размер в мегабайтах'],
+  ]
+  for (const [got, want, what] of formatChecks) {
+    if (got !== want) {
+      throw new Error(`${what}: получено «${got}», ожидалось «${want}»`)
+    }
+    console.log('ok формат —', what, '→', got)
+  }
+
+  // Предпросмотр извлечения на ответе, похожем на настоящий: у Сбера
+  // на странице нет вилки, зато есть должность, компания и технологии.
+  const { ExtractPreviewDialog } = await server.ssrLoadModule(
+    '/src/components/vacancies/ExtractPreviewDialog.tsx',
+  )
+
+  const extractResult = {
+    run_id: 5,
+    provider: 'gemini',
+    model: 'gemini-2.5-flash',
+    source_url: 'https://rabota.sber.ru/search/middle-golang-razrabochik-4554633/',
+    source_chars: 2921,
+    warnings: [],
+    fields: {
+      title: { extracted: 'Middle Golang разрабочик', current: null, has_value: true, differs: true },
+      company: { extracted: 'ПАО Сбербанк', current: null, has_value: true, differs: true },
+      grade: { extracted: 'middle', current: 'junior', has_value: true, differs: true },
+      tech_tags: {
+        extracted: ['Go', 'PostgreSQL', 'Kubernetes'],
+        current: null,
+        has_value: true,
+        differs: true,
+      },
+      opened_date: { extracted: '2026-08-05', current: null, has_value: true, differs: true },
+      // Вилки на странице нет — модель вернула null, и это правильный ответ.
+      salary_from: { extracted: null, current: null, has_value: false, differs: false },
+      salary_to: { extracted: null, current: null, has_value: false, differs: false },
+      salary_currency: { extracted: null, current: null, has_value: false, differs: false },
+      salary_gross: { extracted: null, current: null, has_value: false, differs: false },
+      // Совпадает с тем, что уже в карточке: галочка не нужна.
+      work_format: { extracted: 'onsite', current: 'onsite', has_value: true, differs: false },
+    },
+    usage: {
+      input_tokens: 1071,
+      output_tokens: 106,
+      cost_estimate: 0.002131,
+      attempts: 1,
+      duration_ms: 1843,
+    },
+  }
+
+  const previewHtml = renderToString(
+    withProviders(
+      React.createElement(
+        MemoryRouter,
+        null,
+        React.createElement(ExtractPreviewDialog, {
+          vacancyID: 6,
+          result: extractResult,
+          onClose: () => {},
+        }),
+      ),
+    ),
+  )
+
+  check(
+    previewHtml,
+    [
+      'Что нашла модель',
+      'gemini-2.5-flash',
+      'Сейчас',
+      'Модель предлагает',
+      // Значения приведены к человеческому виду
+      'Middle Golang разрабочик',
+      'ПАО Сбербанк',
+      'Middle',
+      'Go, PostgreSQL, Kubernetes',
+      '05.08.2026',
+      'без изменений',
+      // Пять полей отличаются, они и отмечены
+      'Применить отмеченные (5)',
+      // Расход и ссылка на журнал
+      '$0.0021',
+      '1.8 с',
+      // React вставляет разделитель между текстом и выражением,
+      // поэтому номер запуска в разметке идёт отдельным узлом.
+      'запуск №',
+      '/llm/runs',
+      // Доступность
+      'Применить поле «Должность»',
+      '<caption',
+      'scope="col"',
+    ],
+    'предпросмотр извлечения',
+  )
+
+  // Совпадающее поле нельзя отметить: применять там нечего.
+  if (!previewHtml.includes('disabled')) {
+    throw new Error('предпросмотр: у неизменившихся полей чекбокс должен быть заблокирован')
+  }
+  console.log('ok render предпросмотр — совпадающие поля заблокированы')
+
+  // Пустой результат: модель нашла только то, что уже есть.
+  const nothingNew = {
+    ...extractResult,
+    fields: Object.fromEntries(
+      Object.entries(extractResult.fields).map(([name, field]) => [
+        name,
+        { ...field, differs: false },
+      ]),
+    ),
+  }
+  const nothingHtml = renderToString(
+    withProviders(
+      React.createElement(
+        MemoryRouter,
+        null,
+        React.createElement(ExtractPreviewDialog, {
+          vacancyID: 6,
+          result: nothingNew,
+          onClose: () => {},
+        }),
+      ),
+    ),
+  )
+  check(
+    nothingHtml,
+    ['Модель не нашла ничего нового', 'Применить отмеченные (0)'],
+    'предпросмотр без изменений',
+  )
 
   console.log('\nсмоук пройден')
 } finally {

@@ -19,23 +19,32 @@ type Deps struct {
 	DB       *gorm.DB
 	Activity *service.ActivityService
 	LLM      llm.Config
+	// Extraction может быть nil: без ключей провайдеров заполнение
+	// через модель недоступно, остальное работает как раньше.
+	Extraction *service.ExtractionService
+	// BackupDir — каталог резервных копий рядом с файлом базы.
+	BackupDir string
 }
 
 // Server держит зависимости хендлеров.
 type Server struct {
-	log      *slog.Logger
-	db       *gorm.DB
-	activity *service.ActivityService
-	llm      llm.Config
+	log        *slog.Logger
+	db         *gorm.DB
+	activity   *service.ActivityService
+	llm        llm.Config
+	extraction *service.ExtractionService
+	backupDir  string
 }
 
 // NewServer создаёт HTTP-слой приложения.
 func NewServer(deps Deps) *Server {
 	return &Server{
-		log:      deps.Log,
-		db:       deps.DB,
-		activity: deps.Activity,
-		llm:      deps.LLM,
+		log:        deps.Log,
+		db:         deps.DB,
+		activity:   deps.Activity,
+		llm:        deps.LLM,
+		extraction: deps.Extraction,
+		backupDir:  deps.BackupDir,
 	}
 }
 
@@ -67,6 +76,21 @@ func (s *Server) Routes() http.Handler {
 
 	// Провайдеры языковых моделей. Ключи наружу не отдаются.
 	mux.HandleFunc("GET /api/llm/providers", s.handleListProviders)
+
+	// Журнал запусков: куда уходит квота и чем заполнена каждая вакансия.
+	mux.HandleFunc("GET /api/llm/runs", s.handleListLLMRuns)
+	mux.HandleFunc("GET /api/llm/runs/{id}", s.handleGetLLMRun)
+
+	// Извлечение полей моделью. В вакансию не пишет: результат уходит
+	// на предпросмотр, а запись идёт обычным PATCH после подтверждения.
+	mux.HandleFunc("POST /api/vacancies/{id}/extract", s.handleExtractVacancy)
+
+	// Резервные копии базы. Восстановление меняет все данные, поэтому
+	// перед ним автоматически снимается копия текущего состояния.
+	mux.HandleFunc("GET /api/backups", s.handleListBackups)
+	mux.HandleFunc("POST /api/backups", s.handleCreateBackup)
+	mux.HandleFunc("POST /api/backups/{name}/restore", s.handleRestoreBackup)
+	mux.HandleFunc("DELETE /api/backups/{name}", s.handleDeleteBackup)
 
 	// withJSONErrors переводит служебные 404/405 от ServeMux в общий JSON-формат.
 	// Отдельный catch-all маршрут для этого не годится: он перехватывал бы путь

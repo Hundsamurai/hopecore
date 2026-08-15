@@ -11,6 +11,11 @@ const (
 	CodeNotFound         = "not_found"
 	CodeMethodNotAllowed = "method_not_allowed"
 	CodeInternal         = "internal_error"
+	// CodeProviderUnavailable — провайдер не настроен или не выбран.
+	CodeProviderUnavailable = "provider_unavailable"
+	// CodeExtractionFailed — страницу не удалось прочитать либо модель
+	// не дала пригодного ответа. Подробности в журнале запусков.
+	CodeExtractionFailed = "extraction_failed"
 )
 
 // errorBody — единый формат ошибок (docs/main/design-stage1.md, п. 7).

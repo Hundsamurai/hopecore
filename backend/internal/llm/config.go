@@ -16,8 +16,11 @@ const (
 	defaultMaxPageChars = 40000
 )
 
+// Модели по умолчанию. Для Gemini обе проверены живым запросом: gemini-2.5-pro
+// и gemini-2.5-flash-lite новым ключам больше не выдаются («no longer available
+// to new users»), а pro-модели на бесплатном тарифе упираются в квоту.
 var defaultModels = map[string][]string{
-	ProviderGemini:   {"gemini-2.5-flash", "gemini-2.5-pro"},
+	ProviderGemini:   {"gemini-2.5-flash", "gemini-flash-latest"},
 	ProviderClaude:   {"claude-sonnet-4-5", "claude-opus-4-1"},
 	ProviderDeepSeek: {"deepseek-chat"},
 }
@@ -34,9 +37,33 @@ var providerEnv = []struct {
 	{id: ProviderDeepSeek, label: "DeepSeek", keyEnv: "DEEPSEEK_API_KEY", envShort: "DEEPSEEK"},
 }
 
+// implementedProviders — провайдеры, для которых есть рабочий адаптер.
+//
+// Ключ без адаптера бесполезен: если показать такого провайдера в интерфейсе,
+// пользователь выберет его и получит ошибку вместо результата. Поэтому такие
+// провайдеры в конфигурацию не попадают, а о найденном ключе сообщается в лог.
+var implementedProviders = map[string]bool{
+	ProviderGemini: true,
+}
+
+// ImplementedProviders перечисляет провайдеров с готовым адаптером.
+// Используется для сверки с реестром адаптеров, чтобы списки не разъехались.
+func ImplementedProviders() []string {
+	ids := make([]string, 0, len(implementedProviders))
+	for _, spec := range providerEnv {
+		if implementedProviders[spec.id] {
+			ids = append(ids, spec.id)
+		}
+	}
+	return ids
+}
+
 // Config — все настройки работы с моделями.
 type Config struct {
 	Providers []ProviderConfig
+	// SkippedProviders — провайдеры, у которых есть ключ, но пока нет адаптера.
+	// Нужны, чтобы сказать об этом при старте, а не молча игнорировать настройку.
+	SkippedProviders []string
 	// Timeout — таймаут одного запроса к модели.
 	Timeout time.Duration
 	// FetchTimeout — таймаут скачивания страницы вакансии.
@@ -68,10 +95,19 @@ func LoadConfig() (Config, error) {
 	}
 
 	for _, spec := range providerEnv {
+		apiKey := strings.TrimSpace(os.Getenv(spec.keyEnv))
+
+		if !implementedProviders[spec.id] {
+			if apiKey != "" {
+				cfg.SkippedProviders = append(cfg.SkippedProviders, spec.id)
+			}
+			continue
+		}
+
 		provider := ProviderConfig{
 			ID:     spec.id,
 			Label:  spec.label,
-			APIKey: strings.TrimSpace(os.Getenv(spec.keyEnv)),
+			APIKey: apiKey,
 			Models: defaultModels[spec.id],
 		}
 

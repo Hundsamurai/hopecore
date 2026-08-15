@@ -1,4 +1,12 @@
-import { Bot, Briefcase, PanelLeftClose, PanelLeftOpen, Search } from 'lucide-react'
+import {
+  Bot,
+  Briefcase,
+  Database,
+  PanelLeftClose,
+  PanelLeftOpen,
+  Search,
+  Sparkles,
+} from 'lucide-react'
 import type { LucideIcon } from 'lucide-react'
 import { NavLink } from 'react-router-dom'
 
@@ -15,7 +23,11 @@ interface NavItem {
 
 const NAV_ITEMS: NavItem[] = [
   { to: '/vacancies', label: 'Вакансии', icon: Briefcase },
-  { to: '/search', label: 'Поиск LLM', icon: Search, disabled: true, stageHint: 'Этап 2' },
+  { to: '/llm/runs', label: 'Запуски LLM', icon: Sparkles },
+  { to: '/backups', label: 'Резервные копии', icon: Database },
+  // Поиск по критериям через API источников отложен: api.hh.ru больше
+  // не отдаёт вакансии анонимно, нужен токен приложения.
+  { to: '/search', label: 'Поиск вакансий', icon: Search, disabled: true, stageHint: 'Этап 2.1' },
   { to: '/ai', label: 'Нейроблок', icon: Bot, disabled: true, stageHint: 'Этап 3' },
 ]
 

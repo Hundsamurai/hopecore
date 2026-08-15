@@ -8,6 +8,8 @@ import (
 	"log/slog"
 	"net/http"
 	"net/http/httptest"
+	"path/filepath"
+	"strings"
 	"sync"
 	"testing"
 	"time"
@@ -15,6 +17,7 @@ import (
 	"gorm.io/gorm"
 
 	"github.com/Hundsamurai/hopecore/backend/internal/activity"
+	"github.com/Hundsamurai/hopecore/backend/internal/fetcher"
 	"github.com/Hundsamurai/hopecore/backend/internal/llm"
 	"github.com/Hundsamurai/hopecore/backend/internal/service"
 	"github.com/Hundsamurai/hopecore/backend/internal/store"
@@ -92,6 +95,11 @@ type testEnv struct {
 	checker  *stubChecker
 	log      *slog.Logger
 	activity *service.ActivityService
+	// Заполняются enableExtraction: подстановки для проверки извлечения.
+	provider *stubProvider
+	fetcher  *stubFetcher
+	// backupDir — временный каталог копий, свой у каждого теста.
+	backupDir string
 }
 
 func newTestEnv(t *testing.T) *testEnv {
@@ -117,9 +125,10 @@ func newTestEnv(t *testing.T) *testEnv {
 	activityService := service.NewActivityService(db, checker, 4, log)
 
 	env := &testEnv{
-		t:       t,
-		db:      db,
-		checker: checker,
+		t:         t,
+		db:        db,
+		checker:   checker,
+		backupDir: filepath.Join(t.TempDir(), "backups"),
 	}
 	// По умолчанию провайдеров нет: приложение должно вести себя как на Этапе 1.
 	env.rebuild(log, activityService, llm.Config{})
@@ -131,10 +140,11 @@ func newTestEnv(t *testing.T) *testEnv {
 // rebuild пересобирает роутер с новой конфигурацией моделей.
 func (e *testEnv) rebuild(log *slog.Logger, activity *service.ActivityService, llmConfig llm.Config) {
 	e.handler = NewServer(Deps{
-		Log:      log,
-		DB:       e.db,
-		Activity: activity,
-		LLM:      llmConfig,
+		Log:       log,
+		DB:        e.db,
+		Activity:  activity,
+		LLM:       llmConfig,
+		BackupDir: e.backupDir,
 	}).Routes()
 }
 
@@ -215,4 +225,119 @@ func (e *testEnv) createVacancy(body any) vacancyResponse {
 	var created vacancyResponse
 	e.decode(rec, http.StatusCreated, &created)
 	return created
+}
+
+// --- подстановки для извлечения через модель ---
+
+// stubFetcher подменяет скачивание страницы: тесты не выходят в сеть.
+type stubFetcher struct {
+	page fetcher.Page
+	err  error
+	// calls хранит запрошенные ссылки.
+	calls []string
+}
+
+func (f *stubFetcher) Fetch(_ context.Context, rawURL string) (fetcher.Page, error) {
+	f.calls = append(f.calls, rawURL)
+	if f.err != nil {
+		return fetcher.Page{}, f.err
+	}
+
+	page := f.page
+	page.RequestURL = rawURL
+	if page.FinalURL == "" {
+		page.FinalURL = rawURL
+	}
+	return page, nil
+}
+
+// stubProvider подменяет языковую модель предсказуемыми ответами.
+//
+// answers отдаются по очереди: так проверяется повторная попытка после
+// неразобранного ответа.
+type stubProvider struct {
+	answers   []string
+	errs      []error
+	tokensIn  int
+	tokensOut int
+	requests  []llm.Request
+}
+
+func (p *stubProvider) ID() string { return llm.ProviderGemini }
+
+func (p *stubProvider) Complete(_ context.Context, req llm.Request) (llm.Response, error) {
+	p.requests = append(p.requests, req)
+	index := len(p.requests) - 1
+
+	if index < len(p.errs) && p.errs[index] != nil {
+		return llm.Response{InputTokens: p.tokensIn, OutputTokens: p.tokensOut}, p.errs[index]
+	}
+
+	answer := ""
+	if index < len(p.answers) {
+		answer = p.answers[index]
+	} else if len(p.answers) > 0 {
+		answer = p.answers[len(p.answers)-1]
+	}
+
+	return llm.Response{
+		JSON:         []byte(answer),
+		InputTokens:  p.tokensIn,
+		OutputTokens: p.tokensOut,
+	}, nil
+}
+
+// llmSetup описывает окружение для проверки извлечения.
+type llmSetup struct {
+	provider *stubProvider
+	fetcher  *stubFetcher
+	// price задаёт прайс: без него оценка стоимости не считается.
+	price llm.Pricing
+	// models переопределяет список разрешённых моделей.
+	models []string
+}
+
+// enableExtraction подключает извлечение с подставными фетчером и моделью.
+func (e *testEnv) enableExtraction(setup llmSetup) {
+	e.t.Helper()
+
+	if setup.provider == nil {
+		setup.provider = &stubProvider{answers: []string{`{}`}}
+	}
+	if setup.fetcher == nil {
+		setup.fetcher = &stubFetcher{page: fetcher.Page{
+			Text:  strings.Repeat("текст вакансии ", 60),
+			Chars: 900,
+		}}
+	}
+	if len(setup.models) == 0 {
+		setup.models = []string{"gemini-2.5-flash", "gemini-flash-latest"}
+	}
+
+	cfg := llm.Config{
+		Timeout:      5 * time.Second,
+		FetchTimeout: time.Second,
+		MaxPageChars: 40000,
+		Providers: []llm.ProviderConfig{{
+			ID:     llm.ProviderGemini,
+			Label:  "Gemini",
+			APIKey: "test-key",
+			Models: setup.models,
+			Price:  setup.price,
+		}},
+	}
+
+	providers := map[string]llm.Provider{llm.ProviderGemini: setup.provider}
+	extraction := service.NewExtractionService(e.db, setup.fetcher, providers, cfg, e.log)
+
+	e.handler = NewServer(Deps{
+		Log:        e.log,
+		DB:         e.db,
+		Activity:   e.activity,
+		LLM:        cfg,
+		Extraction: extraction,
+	}).Routes()
+
+	e.provider = setup.provider
+	e.fetcher = setup.fetcher
 }

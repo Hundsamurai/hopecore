@@ -16,7 +16,9 @@ import (
 	"github.com/Hundsamurai/hopecore/backend/internal/activity"
 	"github.com/Hundsamurai/hopecore/backend/internal/api"
 	"github.com/Hundsamurai/hopecore/backend/internal/config"
+	"github.com/Hundsamurai/hopecore/backend/internal/fetcher"
 	"github.com/Hundsamurai/hopecore/backend/internal/llm"
+	"github.com/Hundsamurai/hopecore/backend/internal/llm/registry"
 	"github.com/Hundsamurai/hopecore/backend/internal/service"
 	"github.com/Hundsamurai/hopecore/backend/internal/store"
 )
@@ -65,11 +67,26 @@ func run(cfg config.Config, log *slog.Logger) error {
 	}
 	logLLMConfig(log, llmConfig)
 
+	providers, err := registry.Build(llmConfig)
+	if err != nil {
+		return err
+	}
+
+	extractionService := service.NewExtractionService(
+		db,
+		fetcher.New(llmConfig.FetchTimeout, llmConfig.MaxPageChars),
+		providers,
+		llmConfig,
+		log,
+	)
+
 	deps := api.Deps{
-		Log:      log,
-		DB:       db,
-		Activity: activityService,
-		LLM:      llmConfig,
+		Log:        log,
+		DB:         db,
+		Activity:   activityService,
+		LLM:        llmConfig,
+		Extraction: extractionService,
+		BackupDir:  store.BackupDir(cfg.DBPath),
 	}
 
 	srv := &http.Server{

@@ -1,11 +1,27 @@
 package llm
 
 import (
+	"fmt"
+	"strings"
 	"testing"
 	"time"
 )
 
+// clearKeys убирает ключи из окружения теста.
+//
+// Без этого тест зависит от того, что лежит в окружении запускающего:
+// однажды экспортированный для живой проверки GEMINI_API_KEY уронил прогон.
+func clearKeys(t *testing.T) {
+	t.Helper()
+
+	for _, key := range []string{"GEMINI_API_KEY", "ANTHROPIC_API_KEY", "DEEPSEEK_API_KEY"} {
+		t.Setenv(key, "")
+	}
+}
+
 func TestLoadConfigWithoutKeys(t *testing.T) {
+	clearKeys(t)
+
 	cfg, err := LoadConfig()
 	if err != nil {
 		t.Fatalf("LoadConfig: %v", err)
@@ -15,8 +31,11 @@ func TestLoadConfigWithoutKeys(t *testing.T) {
 	if cfg.Enabled() {
 		t.Errorf("Enabled() = true без ключей: %+v", cfg.Available())
 	}
-	if len(cfg.Providers) != 3 {
-		t.Errorf("провайдеров в конфигурации: %d, ожидалось 3", len(cfg.Providers))
+	// В конфигурацию попадают только провайдеры с готовым адаптером:
+	// ключ без адаптера дал бы в интерфейсе выбор, который не работает.
+	if len(cfg.Providers) != len(ImplementedProviders()) {
+		t.Errorf("провайдеров в конфигурации: %d, реализовано: %d",
+			len(cfg.Providers), len(ImplementedProviders()))
 	}
 	if cfg.Timeout != defaultTimeout || cfg.FetchTimeout != defaultFetchTimeout {
 		t.Errorf("таймауты по умолчанию не подставились: %v / %v", cfg.Timeout, cfg.FetchTimeout)
@@ -179,4 +198,42 @@ func TestPricingEstimate(t *testing.T) {
 			t.Errorf("Estimate = %v, ожидалось 1", got)
 		}
 	})
+}
+
+func TestProviderConfigNeverPrintsKey(t *testing.T) {
+	const secret = "AQ.super-secret-key-value-12345"
+
+	cfg := ProviderConfig{
+		ID:     ProviderGemini,
+		Label:  "Gemini",
+		APIKey: secret,
+		Models: []string{"gemini-2.5-flash"},
+		Price:  Pricing{InputPerMillion: 0.3},
+	}
+
+	// Все формы вывода, которыми пользуются логи и сообщения об ошибках.
+	outputs := map[string]string{
+		"%v":            fmt.Sprintf("%v", cfg),
+		"%+v":           fmt.Sprintf("%+v", cfg),
+		"%#v":           fmt.Sprintf("%#v", cfg),
+		"%s":            fmt.Sprintf("%s", cfg),
+		"срез в %+v":    fmt.Sprintf("%+v", []ProviderConfig{cfg}),
+		"внутри Config": fmt.Sprintf("%+v", Config{Providers: []ProviderConfig{cfg}}),
+	}
+
+	for form, output := range outputs {
+		if strings.Contains(output, secret) {
+			t.Errorf("%s печатает ключ: %s", form, output)
+		}
+		// При этом должно быть видно, что ключ вообще задан.
+		if !strings.Contains(output, "скрыт") {
+			t.Errorf("%s не показывает признак наличия ключа: %s", form, output)
+		}
+	}
+
+	// Отсутствие ключа тоже должно быть различимо.
+	empty := fmt.Sprintf("%v", ProviderConfig{ID: ProviderGemini})
+	if !strings.Contains(empty, "не задан") {
+		t.Errorf("вывод без ключа = %s", empty)
+	}
 }

@@ -90,3 +90,22 @@ export function useUpdateVacancy(id: number) {
     },
   })
 }
+
+/**
+ * Частичное обновление вакансии.
+ *
+ * Отдельно от useUpdateVacancy: та отправляет все поля формы, а здесь нужно
+ * записать только выбранные в предпросмотре, не затронув остальные.
+ */
+export function usePatchVacancy(id: number) {
+  const queryClient = useQueryClient()
+
+  return useMutation({
+    mutationFn: (patch: Partial<VacancyInput>) =>
+      apiRequest<Vacancy>(`/vacancies/${id}`, { method: 'PATCH', body: patch }),
+    onSuccess: (vacancy) => {
+      queryClient.setQueryData(vacancyKeys.detail(id), vacancy)
+      void queryClient.invalidateQueries({ queryKey: vacancyKeys.all })
+    },
+  })
+}

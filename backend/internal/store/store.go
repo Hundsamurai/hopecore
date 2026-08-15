@@ -128,6 +128,7 @@ func models() []any {
 		&model.CandidateStatus{},
 		&model.InterviewSummary{},
 		&model.AIBlock{},
+		&model.LLMRun{},
 	}
 }
 
@@ -141,7 +142,7 @@ func Migrate(db *gorm.DB) error {
 
 // TableNames возвращает имена таблиц схемы — удобно для проверок и диагностики.
 func TableNames() []string {
-	return []string{"vacancies", "candidate_status", "interview_summary", "ai_block"}
+	return []string{"vacancies", "candidate_status", "interview_summary", "ai_block", "llm_runs"}
 }
 
 // PragmaString читает строковое значение pragma (например, journal_mode).

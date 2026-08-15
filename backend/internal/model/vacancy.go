@@ -105,6 +105,10 @@ type Vacancy struct {
 	// работает благодаря включённому pragma foreign_keys.
 	CandidateStatus *CandidateStatus `gorm:"constraint:OnDelete:CASCADE"`
 	AIBlock         *AIBlock         `gorm:"constraint:OnDelete:CASCADE"`
+
+	// Запуски модели, наоборот, переживают удаление вакансии: внешний ключ
+	// обнуляется, а запись о трате квоты остаётся в журнале.
+	LLMRuns []LLMRun `gorm:"constraint:OnDelete:SET NULL"`
 }
 
 // TableName закрепляет имя таблицы из дизайн-документа вместо автогенерации gorm.

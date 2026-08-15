@@ -10,6 +10,7 @@ import { Spinner } from '@/components/ui/spinner'
 import { ActivityBadge } from '@/components/vacancies/ActivityBadge'
 import { ActivityPanel } from '@/components/vacancies/ActivityPanel'
 import { CandidateStatusForm } from '@/components/vacancies/CandidateStatusForm'
+import { ExtractButton } from '@/components/vacancies/ExtractButton'
 import { StagePlaceholder } from '@/components/vacancies/StagePlaceholder'
 import { VacancyFormDialog } from '@/components/vacancies/VacancyFormDialog'
 import {
@@ -83,8 +84,9 @@ export function VacancyPage() {
                 <ExternalLink className="size-3.5 shrink-0" aria-hidden="true" />
               </a>
             </div>
-            <div className="flex shrink-0 items-center gap-2">
+            <div className="flex shrink-0 flex-wrap items-center gap-2">
               <ActivityBadge vacancy={vacancy} />
+              <ExtractButton vacancyID={vacancy.id} />
               <Button size="sm" onClick={() => setEditOpen(true)}>
                 <Pencil className="size-3.5" aria-hidden="true" />
                 Изменить

@@ -5,6 +5,8 @@
 // в internal/service, как и у проверки активности.
 package llm
 
+import "fmt"
+
 // Идентификаторы провайдеров. Значения попадают в API и в журнал запусков,
 // поэтому меняться не должны.
 const (
@@ -51,6 +53,32 @@ type ProviderConfig struct {
 // Available сообщает, можно ли пользоваться провайдером: нужен и ключ, и модели.
 func (c ProviderConfig) Available() bool {
 	return c.APIKey != "" && len(c.Models) > 0
+}
+
+// String скрывает ключ при выводе.
+//
+// Метод появился после реального случая: упавший тест напечатал структуру
+// через %+v вместе с настоящим ключом. Пока ключ — обычное поле, он утечёт
+// в первом же сообщении об ошибке или отладочном логе; со Stringer это
+// перестаёт быть возможным.
+func (c ProviderConfig) String() string {
+	return fmt.Sprintf("{ID:%s Label:%s APIKey:%s Models:%v Price:%+v}",
+		c.ID, c.Label, redact(c.APIKey), c.Models, c.Price)
+}
+
+// GoString закрывает и вывод через %#v.
+func (c ProviderConfig) GoString() string {
+	return c.String()
+}
+
+// redact оставляет только признак наличия ключа и его длину: этого хватает,
+// чтобы отличить «ключа нет» от «ключ не тот», и недостаточно, чтобы им
+// воспользоваться.
+func redact(key string) string {
+	if key == "" {
+		return "<не задан>"
+	}
+	return fmt.Sprintf("<скрыт, %d символов>", len(key))
 }
 
 // HasModel проверяет, что модель разрешена конфигурацией. Нужен, чтобы клиент

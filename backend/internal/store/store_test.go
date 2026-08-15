@@ -276,3 +276,79 @@ func TestOpenCorruptedFileGivesReadableError(t *testing.T) {
 		}
 	}
 }
+
+func TestLLMRunSurvivesVacancyDeletion(t *testing.T) {
+	db := newMemoryDB(t)
+
+	vacancy := model.Vacancy{URL: "https://example.com/vacancy/llm"}
+	if err := db.Create(&vacancy).Error; err != nil {
+		t.Fatalf("создание вакансии: %v", err)
+	}
+
+	tokens := 1500
+	run := model.LLMRun{
+		Purpose:       model.PurposeExtractVacancy,
+		VacancyID:     &vacancy.ID,
+		Provider:      "gemini",
+		Model:         "gemini-2.5-flash",
+		PromptVersion: "extract-v1",
+		SourceURL:     vacancy.URL,
+		SourceChars:   2900,
+		Status:        model.RunStatusOK,
+		InputTokens:   &tokens,
+		Attempts:      1,
+		DurationMs:    1200,
+		ResponseJSON:  `{"title":"Go-разработчик"}`,
+	}
+	if err := db.Create(&run).Error; err != nil {
+		t.Fatalf("создание записи журнала: %v", err)
+	}
+
+	if err := db.Delete(&model.Vacancy{}, vacancy.ID).Error; err != nil {
+		t.Fatalf("удаление вакансии: %v", err)
+	}
+
+	// История трат не должна исчезать вместе с карточкой: внешний ключ
+	// обнуляется, а запись остаётся.
+	var stored model.LLMRun
+	if err := db.First(&stored, run.ID).Error; err != nil {
+		t.Fatalf("запись журнала пропала после удаления вакансии: %v", err)
+	}
+	if stored.VacancyID != nil {
+		t.Errorf("vacancy_id = %v, ожидался nil", *stored.VacancyID)
+	}
+	if stored.Provider != "gemini" || stored.Status != model.RunStatusOK {
+		t.Errorf("данные записи испортились: %+v", stored)
+	}
+	if stored.InputTokens == nil || *stored.InputTokens != 1500 {
+		t.Errorf("input_tokens = %v", stored.InputTokens)
+	}
+}
+
+func TestLLMRunNullableCounters(t *testing.T) {
+	db := newMemoryDB(t)
+
+	// Провайдер может не вернуть счётчики, и ноль был бы неправдой.
+	run := model.LLMRun{
+		Purpose:  model.PurposeExtractVacancy,
+		Provider: "deepseek",
+		Model:    "deepseek-chat",
+		Status:   model.RunStatusFetchError,
+		Error:    "сайт ответил 403",
+	}
+	if err := db.Create(&run).Error; err != nil {
+		t.Fatalf("создание записи: %v", err)
+	}
+
+	var stored model.LLMRun
+	if err := db.First(&stored, run.ID).Error; err != nil {
+		t.Fatalf("чтение записи: %v", err)
+	}
+	if stored.InputTokens != nil || stored.OutputTokens != nil || stored.CostEstimate != nil {
+		t.Errorf("счётчики не nil: %v / %v / %v", stored.InputTokens, stored.OutputTokens, stored.CostEstimate)
+	}
+	// Запись об ошибке скачивания тоже попадает в журнал: видно, что попытка была.
+	if stored.VacancyID != nil {
+		t.Errorf("vacancy_id = %v", *stored.VacancyID)
+	}
+}
